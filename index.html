@@ -1,0 +1,465 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Arrow Walking - Draw Puzzle</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      user-select: none;
+      -webkit-user-select: none;
+      touch-action: manipulation;
+    }
+
+    body {
+      background: #111827;
+      color: #fff;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 10px;
+    }
+
+    /* Mobile Game Container */
+    #game-card {
+      width: 100%;
+      max-width: 420px;
+      background: #1f2937;
+      border-radius: 20px;
+      padding: 16px;
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+    }
+
+    /* Header UI */
+    .header {
+      width: 100%;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .level-badge {
+      background: #374151;
+      padding: 6px 14px;
+      border-radius: 12px;
+      font-size: 16px;
+      font-weight: bold;
+      color: #60a5fa;
+    }
+
+    .info-text {
+      font-size: 13px;
+      color: #9ca3af;
+      text-align: right;
+    }
+
+    /* Canvas Frame */
+    .canvas-wrapper {
+      position: relative;
+      width: 100%;
+      aspect-ratio: 1;
+      background: #111827;
+      border-radius: 16px;
+      overflow: hidden;
+      border: 2px solid #374151;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    canvas {
+      display: block;
+      touch-action: none;
+    }
+
+    /* Controls Bar */
+    .controls {
+      width: 100%;
+      display: flex;
+      gap: 10px;
+    }
+
+    .btn {
+      flex: 1;
+      padding: 12px 16px;
+      border: none;
+      border-radius: 12px;
+      font-weight: bold;
+      font-size: 15px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+    }
+
+    .btn-reset {
+      background: #ef4444;
+      color: white;
+    }
+
+    .btn-reset:active {
+      background: #dc2626;
+      transform: scale(0.97);
+    }
+
+    .btn-run {
+      background: #10b981;
+      color: white;
+    }
+
+    .btn-run:active {
+      background: #059669;
+      transform: scale(0.97);
+    }
+
+    /* Win Overlay Modal */
+    .overlay {
+      position: absolute;
+      inset: 0;
+      background: rgba(17, 24, 39, 0.92);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.3s ease;
+      border-radius: 16px;
+    }
+
+    .overlay.active {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .win-title {
+      font-size: 24px;
+      font-weight: 800;
+      color: #34d399;
+      text-align: center;
+    }
+
+    .btn-next {
+      background: #2563eb;
+      color: white;
+      padding: 12px 28px;
+      border-radius: 12px;
+      border: none;
+      font-weight: bold;
+      font-size: 16px;
+      cursor: pointer;
+    }
+
+    .btn-next:active {
+      background: #1d4ed8;
+    }
+  </style>
+</head>
+<body>
+
+<div id="game-card">
+  <div class="header">
+    <div id="level-display" class="level-badge">Level 1 / 10</div>
+    <div class="info-text">Drag line to goal</div>
+  </div>
+
+  <div class="canvas-wrapper">
+    <canvas id="gameCanvas"></canvas>
+    
+    <div id="win-overlay" class="overlay">
+      <div class="win-title">🎉 Level Cleared!</div>
+      <button class="btn-next" onclick="nextLevel()">Next Level ➔</button>
+    </div>
+  </div>
+
+  <div class="controls">
+    <button class="btn btn-reset" onclick="resetPath()">🔄 Reset</button>
+    <button class="btn btn-run" onclick="startWalking()">▶ Walk Arrow</button>
+  </div>
+</div>
+
+<script>
+  // Game Setup & Levels (10 Levels: Grid size, Start Pos & Dir, Goal, Obstacles)
+  // Directions: 0: Right, 1: Down, 2: Left, 3: Up
+  const LEVELS = [
+    { grid: 4, start: {x: 0, y: 0, dir: 0}, goal: {x: 3, y: 0}, obstacles: [] },
+    { grid: 4, start: {x: 0, y: 0, dir: 1}, goal: {x: 3, y: 3}, obstacles: [{x: 1, y: 1}] },
+    { grid: 5, start: {x: 0, y: 2, dir: 0}, goal: {x: 4, y: 2}, obstacles: [{x: 2, y: 2}] },
+    { grid: 5, start: {x: 0, y: 0, dir: 1}, goal: {x: 4, y: 4}, obstacles: [{x: 2, y: 0}, {x: 2, y: 1}, {x: 2, y: 2}] },
+    { grid: 5, start: {x: 4, y: 0, dir: 2}, goal: {x: 0, y: 4}, obstacles: [{x: 2, y: 1}, {x: 2, y: 3}] },
+    { grid: 6, start: {x: 0, y: 0, dir: 0}, goal: {x: 5, y: 5}, obstacles: [{x: 1, y: 1}, {x: 3, y: 3}, {x: 2, y: 4}] },
+    { grid: 6, start: {x: 2, y: 2, dir: 3}, goal: {x: 5, y: 0}, obstacles: [{x: 2, y: 1}, {x: 4, y: 2}, {x: 3, y: 0}] },
+    { grid: 6, start: {x: 0, y: 5, dir: 3}, goal: {x: 5, y: 0}, obstacles: [{x: 1, y: 3}, {x: 2, y: 3}, {x: 3, y: 3}, {x: 3, y: 2}] },
+    { grid: 7, start: {x: 0, y: 3, dir: 0}, goal: {x: 6, y: 3}, obstacles: [{x: 3, y: 1}, {x: 3, y: 2}, {x: 3, y: 3}, {x: 3, y: 4}, {x: 3, y: 5}] },
+    { grid: 7, start: {x: 0, y: 0, dir: 1}, goal: {x: 6, y: 6}, obstacles: [{x: 1, y: 1}, {x: 2, y: 2}, {x: 3, y: 3}, {x: 4, y: 4}, {x: 5, y: 5}] }
+  ];
+
+  let currentLevelIdx = parseInt(localStorage.getItem('arrow_walk_level')) || 0;
+  if(currentLevelIdx >= LEVELS.length) currentLevelIdx = 0;
+
+  const canvas = document.getElementById('gameCanvas');
+  const ctx = canvas.getContext('2d');
+  const winOverlay = document.getElementById('win-overlay');
+  const levelDisplay = document.getElementById('level-display');
+
+  let size = 320;
+  let cellSize = 0;
+  let isDrawing = false;
+  let drawnPath = []; // Array of grid coordinates {x, y}
+  let isWalking = false;
+  let walker = { x: 0, y: 0, dir: 0 };
+  let walkPathIndex = 0;
+
+  function initCanvas() {
+    const parentWidth = canvas.parentElement.clientWidth;
+    size = Math.min(parentWidth, 400);
+    canvas.width = size;
+    canvas.height = size;
+    loadLevel(currentLevelIdx);
+  }
+
+  function loadLevel(idx) {
+    currentLevelIdx = idx;
+    localStorage.setItem('arrow_walk_level', currentLevelIdx);
+    const level = LEVELS[currentLevelIdx];
+    cellSize = size / level.grid;
+    
+    levelDisplay.textContent = `Level ${currentLevelIdx + 1} / ${LEVELS.length}`;
+    winOverlay.classList.remove('active');
+    
+    resetPath();
+  }
+
+  function resetPath() {
+    if (isWalking) return;
+    const level = LEVELS[currentLevelIdx];
+    drawnPath = [{ x: level.start.x, y: level.start.y }];
+    isWalking = false;
+    winOverlay.classList.remove('active');
+    render();
+  }
+
+  // --- Rendering ---
+  function render() {
+    const level = LEVELS[currentLevelIdx];
+    ctx.clearRect(0, 0, size, size);
+
+    // 1. Draw Grid
+    ctx.strokeStyle = '#1f2937';
+    ctx.lineWidth = 1;
+    for (let i = 0; i <= level.grid; i++) {
+      ctx.beginPath();
+      ctx.moveTo(i * cellSize, 0); ctx.lineTo(i * cellSize, size);
+      ctx.moveTo(0, i * cellSize); ctx.lineTo(size, i * cellSize);
+      ctx.stroke();
+    }
+
+    // 2. Draw Obstacles
+    ctx.fillStyle = '#ef4444';
+    level.obstacles.forEach(obs => {
+      ctx.beginPath();
+      ctx.roundRect(obs.x * cellSize + 4, obs.y * cellSize + 4, cellSize - 8, cellSize - 8, 8);
+      ctx.fill();
+    });
+
+    // 3. Draw Goal
+    ctx.fillStyle = '#10b981';
+    ctx.beginPath();
+    const gx = level.goal.x * cellSize + cellSize / 2;
+    const gy = level.goal.y * cellSize + cellSize / 2;
+    ctx.arc(gx, gy, cellSize * 0.3, 0, Math.PI * 2);
+    ctx.fill();
+
+    // 4. Draw Path Line
+    if (drawnPath.length > 1) {
+      ctx.strokeStyle = '#60a5fa';
+      ctx.lineWidth = 6;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.beginPath();
+      drawnPath.forEach((pt, i) => {
+        const px = pt.x * cellSize + cellSize / 2;
+        const py = pt.y * cellSize + cellSize / 2;
+        if (i === 0) ctx.moveTo(px, py);
+        else ctx.lineTo(px, py);
+      });
+      ctx.stroke();
+    }
+
+    // 5. Draw Arrow / Character
+    if (!isWalking) {
+      drawArrow(level.start.x, level.start.y, level.start.dir);
+    } else {
+      drawArrow(walker.x, walker.y, walker.dir, true);
+    }
+  }
+
+  function drawArrow(gx, gy, dir, smooth = false) {
+    ctx.save();
+    let px = smooth ? gx : gx * cellSize + cellSize / 2;
+    let py = smooth ? gy : gy * cellSize + cellSize / 2;
+
+    ctx.translate(px, py);
+    ctx.rotate((dir * 90 * Math.PI) / 180);
+
+    ctx.fillStyle = '#f59e0b';
+    ctx.beginPath();
+    const r = cellSize * 0.3;
+    ctx.moveTo(r, 0);
+    ctx.lineTo(-r, -r / 1.5);
+    ctx.lineTo(-r / 2, 0);
+    ctx.lineTo(-r, r / 1.5);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.restore();
+  }
+
+  // --- Input Handling (Touch & Drag) ---
+  function getGridPos(e) {
+    const rect = canvas.getBoundingClientRect();
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+    const x = Math.floor((clientX - rect.left) / cellSize);
+    const y = Math.floor((clientY - rect.top) / cellSize);
+    const level = LEVELS[currentLevelIdx];
+    return {
+      x: Math.max(0, Math.min(level.grid - 1, x)),
+      y: Math.max(0, Math.min(level.grid - 1, y))
+    };
+  }
+
+  function handleStart(e) {
+    if (isWalking) return;
+    const pos = getGridPos(e);
+    const last = drawnPath[drawnPath.length - 1];
+    if (pos.x === last.x && pos.y === last.y) {
+      isDrawing = true;
+    }
+  }
+
+  function handleMove(e) {
+    if (!isDrawing || isWalking) return;
+    const pos = getGridPos(e);
+    const last = drawnPath[drawnPath.length - 1];
+    const level = LEVELS[currentLevelIdx];
+
+    // Orthogonal check
+    const dx = Math.abs(pos.x - last.x);
+    const dy = Math.abs(pos.y - last.y);
+
+    if ((dx === 1 && dy === 0) || (dx === 0 && dy === 1)) {
+      // Check for obstacles
+      const isObs = level.obstacles.some(o => o.x === pos.x && o.y === pos.y);
+      if (!isObs) {
+        // Prevent immediate backtracking loop
+        if (drawnPath.length > 1 && drawnPath[drawnPath.length - 2].x === pos.x && drawnPath[drawnPath.length - 2].y === pos.y) {
+          drawnPath.pop();
+        } else {
+          drawnPath.push(pos);
+        }
+        render();
+      }
+    }
+  }
+
+  function handleEnd() {
+    isDrawing = false;
+  }
+
+  canvas.addEventListener('mousedown', handleStart);
+  canvas.addEventListener('mousemove', handleMove);
+  window.addEventListener('mouseup', handleEnd);
+
+  canvas.addEventListener('touchstart', handleStart, { passive: true });
+  canvas.addEventListener('touchmove', handleMove, { passive: true });
+  window.addEventListener('touchend', handleEnd);
+
+  // --- Animation & Walking Logic ---
+  function startWalking() {
+    if (isWalking || drawnPath.length < 2) return;
+    isWalking = true;
+    walkPathIndex = 0;
+    animateWalk();
+  }
+
+  function animateWalk() {
+    if (walkPathIndex >= drawnPath.length - 1) {
+      checkWin();
+      return;
+    }
+
+    const p1 = drawnPath[walkPathIndex];
+    const p2 = drawnPath[walkPathIndex + 1];
+
+    let dir = 0;
+    if (p2.x > p1.x) dir = 0;
+    else if (p2.y > p1.y) dir = 1;
+    else if (p2.x < p1.x) dir = 2;
+    else if (p2.y < p1.y) dir = 3;
+
+    let startPx = p1.x * cellSize + cellSize / 2;
+    let startPy = p1.y * cellSize + cellSize / 2;
+    let endPx = p2.x * cellSize + cellSize / 2;
+    let endPy = p2.y * cellSize + cellSize / 2;
+
+    let progress = 0;
+    const speed = 0.08;
+
+    function step() {
+      progress += speed;
+      if (progress >= 1) {
+        walkPathIndex++;
+        animateWalk();
+      } else {
+        walker.x = startPx + (endPx - startPx) * progress;
+        walker.y = startPy + (endPy - startPy) * progress;
+        walker.dir = dir;
+        render();
+        requestAnimationFrame(step);
+      }
+    }
+    requestAnimationFrame(step);
+  }
+
+  function checkWin() {
+    const lastPos = drawnPath[drawnPath.length - 1];
+    const level = LEVELS[currentLevelIdx];
+
+    if (lastPos.x === level.goal.x && lastPos.y === level.goal.y) {
+      winOverlay.classList.add('active');
+    } else {
+      setTimeout(() => {
+        alert("❌ Goal not reached! Try again.");
+        resetPath();
+      }, 200);
+    }
+  }
+
+  function nextLevel() {
+    if (currentLevelIdx + 1 < LEVELS.length) {
+      loadLevel(currentLevelIdx + 1);
+    } else {
+      alert("🏆 Congratulations! You cleared all 10 levels.");
+      loadLevel(0);
+    }
+  }
+
+  window.addEventListener('resize', initCanvas);
+  window.addEventListener('DOMContentLoaded', initCanvas);
+</script>
+</body>
+</html>
